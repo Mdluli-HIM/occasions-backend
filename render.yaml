@@ -1,0 +1,37 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# In the Render dashboard: New → Blueprint → point at this repo, it reads this file automatically.
+# DATABASE_URL, NEXTAUTH_SECRET, R2_* and CORS_ORIGIN are marked sync:false — set them
+# manually in the Render dashboard (Environment tab) rather than committing secrets here.
+
+services:
+  - type: web
+    name: occasions-backend
+    runtime: node
+    plan: starter
+    region: frankfurt # closest Render region to South Africa
+    buildCommand: npm install && npm run prisma:generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false # your Vercel URL, e.g. https://occasions.vercel.app
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false

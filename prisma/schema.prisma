@@ -1,0 +1,291 @@
+// Occasions marketplace — Postgres schema
+// NOTE: Listing fields are folded directly into Provider (rather than a
+// separate Listing table) to keep v1 simple — see BACKEND_HANDOFF.md section 6
+// "suggested" entities. This still exposes every field the frontend needs.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  customer
+  provider
+  admin
+}
+
+enum ProviderStatus {
+  draft
+  pending_review
+  live
+  paused
+}
+
+enum PackageCode {
+  starter
+  featured
+  premium
+}
+
+enum BudgetLevel {
+  low
+  medium
+  high
+  premium
+}
+
+// Serialized to "extra-large" in the API layer (Prisma enum values can't contain hyphens).
+enum GuestLevel {
+  small
+  medium
+  large
+  extra_large
+}
+
+enum LeadStatus {
+  New
+  Viewed
+  Contacted
+  Quoted
+  Accepted
+  Completed
+  Closed
+}
+
+enum LeadUrgency {
+  High
+  Medium
+  Low
+}
+
+enum ContactMethod {
+  WhatsApp
+  Phone
+  Email
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String   @default("")
+  phone        String   @default("")
+  role         UserRole @default(customer)
+  createdAt    DateTime @default(now())
+
+  provider            Provider?
+  savedProviders       SavedProvider[]
+  savedSearches        SavedSearch[]
+  alertSubscriptions   AlertSubscription[]
+  leads                Lead[]
+  eventBriefs          EventBrief[]
+}
+
+model Provider {
+  id     String @id @default(cuid())
+  slug   String @unique
+  // Old/alternate slugs that should still resolve (301-style) to this provider.
+  // e.g. mandlas-event-rentals also answers to "mandla-event-rentals"
+  aliases String[] @default([])
+
+  userId String?  @unique
+  user   User?    @relation(fields: [userId], references: [id])
+
+  name        String
+  category    String @default("")
+  tagline     String @default("")
+  summary     String @default("")
+  // Single free-text block edited from the onboarding + listing editor.
+  description String @default("")
+  // Paragraph breakdown used on the public detail page. Defaults to
+  // splitting `description` on blank lines when not explicitly seeded.
+  descriptionParagraphs String[] @default([])
+  highlights             String[] @default([])
+
+  area            String  @default("")
+  province        String  @default("")
+  // Optional override for the "City, Province" display string.
+  locationDisplay String?
+  areasServed     String[] @default([])
+  // Optional override for the short "5 areas" summary shown in the listing editor.
+  areasDisplay    String?
+
+  priceLabel String      @default("")
+  priceNote  String      @default("")
+  priceValue Int         @default(0)
+  budgetLevel BudgetLevel @default(medium)
+  guestLevel  GuestLevel  @default(medium)
+
+  capacityMin   Int     @default(0)
+  capacityMax   Int     @default(0)
+  // Optional override for the "30 - 500 guests" display string.
+  capacityLabel String?
+
+  rating          Float  @default(0)
+  reviewCount     Int    @default(0)
+  responseTime    String @default("")
+  yearsExperience String @default("")
+  serviceModel    String @default("")
+
+  // Coarse taxonomy slugs used for /api/providers search filters.
+  serviceSlugs String[] @default([])
+  eventSlugs   String[] @default([])
+  // Granular labels shown as pills on the public detail page
+  // (e.g. "Buffet catering", "Plated meals" rather than just "Catering").
+  detailServices   String[] @default([])
+  detailEventTypes String[] @default([])
+
+  verified Boolean        @default(false)
+  promoted Boolean        @default(false)
+  featured Boolean        @default(false)
+  status   ProviderStatus @default(draft)
+
+  packageCode   PackageCode @default(starter)
+  packageStatus String      @default("Active")
+  profileViews  Int         @default(0)
+  quoteRequests Int         @default(0)
+
+  contactPerson   String @default("")
+  contactPhone    String @default("")
+  contactEmail    String @default("")
+  contactWhatsapp String @default("")
+
+  photosAddedCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  media   Media[]
+  reviews Review[]
+  leads   Lead[]
+  savedBy SavedProvider[]
+
+  @@index([status])
+  @@index([serviceSlugs])
+  @@index([eventSlugs])
+}
+
+model Media {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  url        String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  authorName String
+  rating     Float
+  comment    String
+  createdAt  DateTime @default(now())
+}
+
+model Lead {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer   User?    @relation(fields: [customerId], references: [id])
+
+  // Set when this lead was created from an Event Brief rather than a
+  // single-provider quote form. Nullable so existing/direct leads are unaffected.
+  eventBriefId String?
+  eventBrief   EventBrief? @relation(fields: [eventBriefId], references: [id])
+
+  name          String
+  email         String
+  phone         String
+  eventType     String        @default("")
+  serviceNeeded String        @default("")
+  eventDate     String        @default("")
+  location      String        @default("")
+  guests        String        @default("")
+  budget        String        @default("")
+  message       String        @default("")
+  status        LeadStatus    @default(New)
+  urgency       LeadUrgency   @default(Medium)
+  contactMethod ContactMethod @default(Email)
+
+  createdAt DateTime @default(now())
+
+  @@index([providerId])
+}
+
+model EventBrief {
+  id         String @id @default(cuid())
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  occasion String @default("")
+  location String @default("")
+  eventDate String @default("")
+  guests    String @default("")
+  budget    String @default("")
+  notes     String @default("")
+
+  // Canonical service slugs from src/lib/taxonomy.ts, e.g. ["catering", "tents"]
+  serviceSlugs String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leads Lead[]
+
+  @@index([customerId])
+}
+
+model SavedProvider {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, providerId])
+}
+
+model SavedSearch {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  filters    Json
+  createdAt  DateTime @default(now())
+}
+
+model AlertSubscription {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  filters    Json
+  createdAt  DateTime @default(now())
+}
+
+// Reference/taxonomy tables — power /api/categories/* and homepage sections.
+model Service {
+  id                  String @id @default(cuid())
+  slug                String @unique
+  label               String
+  homepageCount       Int    @default(0)
+  homepageImage       String @default("")
+  homepageDescription String @default("")
+  sortOrder           Int    @default(0)
+}
+
+model Occasion {
+  id                  String  @id @default(cuid())
+  slug                String  @unique
+  label               String
+  // Homepage event tiles use plural ids ("funerals") distinct from search slugs ("funeral").
+  homepageId          String?
+  homepageDescription String  @default("")
+  sortOrder           Int     @default(0)
+}
