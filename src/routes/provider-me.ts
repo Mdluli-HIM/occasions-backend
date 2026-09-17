@@ -58,7 +58,10 @@ router.patch("/", async (req, res) => {
 // --- Listing editor — src/app/provider-dashboard/listing/page.tsx (section 5.7) ---
 
 router.get("/listing", async (req, res) => {
-  const provider = await getOwnProvider(req.user!.id);
+  const provider = await prisma.provider.findUnique({
+    where: { userId: req.user!.id },
+    include: { media: { orderBy: { sortOrder: "asc" } } },
+  });
   if (!provider) {
     res.status(404).json({ error: "No provider profile yet." });
     return;
@@ -74,6 +77,10 @@ router.get("/listing", async (req, res) => {
     description: provider.description,
     services: provider.detailServices,
     occasions: provider.detailEventTypes,
+    media: provider.media.map((m) => ({ id: m.id, url: m.url, sortOrder: m.sortOrder })),
+    contactPhone: provider.contactPhone,
+    contactEmail: provider.contactEmail,
+    contactWhatsapp: provider.contactWhatsapp,
   });
 });
 
@@ -427,6 +434,27 @@ router.post("/media", upload.array("photos", 10), async (req, res) => {
   });
 
   res.status(201).json(created);
+});
+
+router.delete("/media/:id", async (req, res) => {
+  const provider = await getOwnProvider(req.user!.id);
+  if (!provider) {
+    res.status(404).json({ error: "No provider profile yet." });
+    return;
+  }
+
+  const media = await prisma.media.findFirst({
+    where: { id: req.params.id, providerId: provider.id },
+  });
+
+  if (!media) {
+    res.status(404).json({ error: "Photo not found." });
+    return;
+  }
+
+  await prisma.media.delete({ where: { id: media.id } });
+
+  res.status(204).send();
 });
 
 export default router;
